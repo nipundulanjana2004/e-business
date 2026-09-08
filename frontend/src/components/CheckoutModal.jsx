@@ -25,16 +25,16 @@ export const CheckoutModal = () => {
   const [formData, setFormData] = useState({
     fullName: user ? user.name : '',
     email: user ? user.email : '',
-    phone: '+91 98765 43210',
-    address: '88 Fashion Boulevard, Suite 400',
-    city: 'Mumbai',
-    state: 'Maharashtra',
-    postalCode: '400001',
-    country: 'India',
+    phone: user ? user.phone : '',
+    address: user ? user.address : '',
+    city: user ? user.city : '',
+    state: user ? user.state : '',
+    postalCode: user ? user.postalCode : '',
+    country: user ? user.country : '',
     paymentMethod: 'Credit Card',
-    cardNumber: '4532 •••• •••• 8820',
-    cardExp: '08/28',
-    cardCvc: '888'
+    cardNumber: user ? user.cardNumber : '',
+    cardExp:  user ? user.cardExp : '',
+    cardCvc: user ? user.cardCvc : ''
   });
   const [completedOrder, setCompletedOrder] = useState(null);
   const [submitting, setSubmitting] = useState(false);
