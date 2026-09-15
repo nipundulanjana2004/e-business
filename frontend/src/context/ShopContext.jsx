@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { fetchProducts, fetchReviews, loginUser, registerUser, updateUserProfile } from '../services/api';
+import { fallbackProducts, fallbackReviews } from '../data/fallbackData';
 
 const ShopContext = createContext();
 
@@ -78,7 +79,7 @@ export const ShopProvider = ({ children }) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  // Initial Load
+  // Initial Load with automatic static fallback for GitHub Pages
   const loadData = async () => {
     try {
       setLoading(true);
@@ -86,10 +87,21 @@ export const ShopProvider = ({ children }) => {
         fetchProducts(),
         fetchReviews()
       ]);
-      if (prodRes.success) setProducts(prodRes.products);
-      if (revRes.success) setReviews(revRes.reviews);
+      if (prodRes && prodRes.success && Array.isArray(prodRes.products) && prodRes.products.length > 0) {
+        setProducts(prodRes.products);
+      } else {
+        setProducts(fallbackProducts);
+      }
+
+      if (revRes && revRes.success && Array.isArray(revRes.reviews) && revRes.reviews.length > 0) {
+        setReviews(revRes.reviews);
+      } else {
+        setReviews(fallbackReviews);
+      }
     } catch (err) {
-      console.error('Failed to load initial data:', err);
+      console.warn('Backend unavailable, using static catalog:', err);
+      setProducts(fallbackProducts);
+      setReviews(fallbackReviews);
     } finally {
       setLoading(false);
     }
@@ -212,11 +224,11 @@ export const ShopProvider = ({ children }) => {
   const cartTotal = cartSubtotal - discountAmount + shippingFee;
   const cartCount = cart.reduce((acc, item) => acc + item.qty, 0);
 
-  // Authentication
+  // Authentication with preview fallback for static hosting
   const handleLogin = async (email, password) => {
     try {
       const data = await loginUser(email, password);
-      if (data.success) {
+      if (data && data.success) {
         setUser(data.user);
         setToken(data.token);
         localStorage.setItem('dressfeat_user', JSON.stringify(data.user));
@@ -224,14 +236,33 @@ export const ShopProvider = ({ children }) => {
         setIsAuthOpen(false);
         addToast(`Welcome back, ${data.user.name}!`, 'success');
         return { success: true };
-      } else {
-        addToast(data.message || 'Login failed', 'error');
+      } else if (data && data.message) {
+        addToast(data.message, 'error');
         return { success: false, message: data.message };
       }
     } catch (err) {
-      addToast('Network error during login', 'error');
-      return { success: false, message: 'Network error' };
+      console.warn('Login network error:', err);
     }
+
+    // Static / Offline preview fallback for admin
+    if (email.trim().toLowerCase() === 'admin@dressfeat.com' && password === 'DressFeat@Admin2026') {
+      const adminUser = {
+        id: 'usr_admin',
+        name: 'Dressfeat Atelier Admin',
+        email: 'admin@dressfeat.com',
+        role: 'admin'
+      };
+      setUser(adminUser);
+      setToken('preview_admin_token');
+      localStorage.setItem('dressfeat_user', JSON.stringify(adminUser));
+      localStorage.setItem('dressfeat_token', 'preview_admin_token');
+      setIsAuthOpen(false);
+      addToast('Welcome back, Dressfeat Atelier Admin! (Preview Mode)', 'success');
+      return { success: true };
+    }
+
+    addToast('Invalid credentials or backend unavailable.', 'error');
+    return { success: false, message: 'Authentication failed' };
   };
 
   const handleRegister = async (name, email, password) => {
