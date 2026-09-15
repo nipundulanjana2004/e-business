@@ -224,10 +224,54 @@ export const ShopProvider = ({ children }) => {
   const cartTotal = cartSubtotal - discountAmount + shippingFee;
   const cartCount = cart.reduce((acc, item) => acc + item.qty, 0);
 
-  // Authentication with preview fallback for static hosting
-  const handleLogin = async (email, password) => {
+  // Local persistent user repository (ensures registration, login & password updates work on GitHub Pages)
+  const getLocalUsers = () => {
     try {
-      const data = await loginUser(email, password);
+      const raw = localStorage.getItem('dressfeat_users_db');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      // ignore
+    }
+    const defaultUsers = [
+      {
+        id: 'usr_admin',
+        name: 'Dressfeat Atelier Admin',
+        email: 'admin@dressfeat.com',
+        password: 'DressFeat@Admin2026',
+        role: 'admin',
+        phone: '+94 11 234 5678',
+        address: 'Atelier Flagship, Colombo',
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: 'usr_demo',
+        name: 'Sophia Laurent',
+        email: 'sophia@example.com',
+        password: 'password123',
+        role: 'customer',
+        phone: '+33 1 42 68 55 00',
+        address: '45 Avenue Montaigne, Paris',
+        createdAt: new Date().toISOString()
+      }
+    ];
+    localStorage.setItem('dressfeat_users_db', JSON.stringify(defaultUsers));
+    return defaultUsers;
+  };
+
+  const saveLocalUsers = (users) => {
+    localStorage.setItem('dressfeat_users_db', JSON.stringify(users));
+  };
+
+  // Authentication: supports both live Node backend and static GitHub Pages
+  const handleLogin = async (email, password) => {
+    const cleanEmail = (email || '').trim().toLowerCase();
+
+    // 1. Try remote API first if backend server is online
+    try {
+      const data = await loginUser(cleanEmail, password);
       if (data && data.success) {
         setUser(data.user);
         setToken(data.token);
@@ -236,39 +280,49 @@ export const ShopProvider = ({ children }) => {
         setIsAuthOpen(false);
         addToast(`Welcome back, ${data.user.name}!`, 'success');
         return { success: true };
-      } else if (data && data.message) {
+      }
+      if (data && data.status && data.status !== 404 && data.message) {
         addToast(data.message, 'error');
         return { success: false, message: data.message };
       }
     } catch (err) {
-      console.warn('Login network error:', err);
+      console.warn('Backend unavailable, using local client storage:', err);
     }
 
-    // Static / Offline preview fallback for admin
-    if (email.trim().toLowerCase() === 'admin@dressfeat.com' && password === 'DressFeat@Admin2026') {
-      const adminUser = {
-        id: 'usr_admin',
-        name: 'Dressfeat Atelier Admin',
-        email: 'admin@dressfeat.com',
-        role: 'admin'
+    // 2. Client-side persistent storage fallback (for GitHub Pages live site)
+    const users = getLocalUsers();
+    const matched = users.find(u => u.email.toLowerCase() === cleanEmail && u.password === password);
+    if (matched) {
+      const safeUser = {
+        id: matched.id,
+        name: matched.name,
+        email: matched.email,
+        role: matched.role,
+        phone: matched.phone || '',
+        address: matched.address || ''
       };
-      setUser(adminUser);
-      setToken('preview_admin_token');
-      localStorage.setItem('dressfeat_user', JSON.stringify(adminUser));
-      localStorage.setItem('dressfeat_token', 'preview_admin_token');
+      const localToken = 'token_' + Date.now();
+      setUser(safeUser);
+      setToken(localToken);
+      localStorage.setItem('dressfeat_user', JSON.stringify(safeUser));
+      localStorage.setItem('dressfeat_token', localToken);
       setIsAuthOpen(false);
-      addToast('Welcome back, Dressfeat Atelier Admin! (Preview Mode)', 'success');
+      addToast(`Welcome back, ${matched.name}!`, 'success');
       return { success: true };
     }
 
-    addToast('Invalid credentials or backend unavailable.', 'error');
-    return { success: false, message: 'Authentication failed' };
+    addToast('Invalid email or password. Please try again.', 'error');
+    return { success: false, message: 'Invalid email or password' };
   };
 
   const handleRegister = async (name, email, password) => {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanName = (name || '').trim();
+
+    // 1. Try remote API first if backend server is online
     try {
-      const data = await registerUser(name, email, password);
-      if (data.success) {
+      const data = await registerUser(cleanName, cleanEmail, password);
+      if (data && data.success) {
         setUser(data.user);
         setToken(data.token);
         localStorage.setItem('dressfeat_user', JSON.stringify(data.user));
@@ -276,14 +330,54 @@ export const ShopProvider = ({ children }) => {
         setIsAuthOpen(false);
         addToast(`Account created! Welcome to DRESSFEAT, ${data.user.name}.`, 'success');
         return { success: true };
-      } else {
-        addToast(data.message || 'Registration failed', 'error');
+      }
+      if (data && data.status && data.status !== 404 && data.message) {
+        addToast(data.message, 'error');
         return { success: false, message: data.message };
       }
     } catch (err) {
-      addToast('Network error during registration', 'error');
-      return { success: false, message: 'Network error' };
+      console.warn('Backend unavailable, registering in local client storage:', err);
     }
+
+    // 2. Client-side persistent storage fallback (for GitHub Pages live site)
+    const users = getLocalUsers();
+    const existing = users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (existing) {
+      addToast('Email is already registered. Please sign in.', 'error');
+      return { success: false, message: 'Email is already registered' };
+    }
+
+    const newUser = {
+      id: 'usr_' + Date.now(),
+      name: cleanName,
+      email: cleanEmail,
+      password: password,
+      role: 'customer',
+      phone: '',
+      address: '',
+      createdAt: new Date().toISOString()
+    };
+
+    users.push(newUser);
+    saveLocalUsers(users);
+
+    const safeUser = {
+      id: newUser.id,
+      name: newUser.name,
+      email: newUser.email,
+      role: newUser.role,
+      phone: '',
+      address: ''
+    };
+    const localToken = 'token_' + Date.now();
+
+    setUser(safeUser);
+    setToken(localToken);
+    localStorage.setItem('dressfeat_user', JSON.stringify(safeUser));
+    localStorage.setItem('dressfeat_token', localToken);
+    setIsAuthOpen(false);
+    addToast(`Account created! Welcome to DRESSFEAT, ${safeUser.name}.`, 'success');
+    return { success: true };
   };
 
   const handleLogout = () => {
@@ -297,9 +391,10 @@ export const ShopProvider = ({ children }) => {
   };
 
   const updateProfile = async (formData) => {
+    // 1. Try remote API first if backend server is online
     try {
       const res = await updateUserProfile(formData, token);
-      if (res.success) {
+      if (res && res.success) {
         setUser(res.user);
         if (res.token) {
           setToken(res.token);
@@ -308,14 +403,82 @@ export const ShopProvider = ({ children }) => {
         localStorage.setItem('dressfeat_user', JSON.stringify(res.user));
         addToast(res.message || 'Profile updated successfully', 'success');
         return { success: true };
-      } else {
-        addToast(res.message || 'Failed to update profile', 'error');
+      }
+      if (res && res.status && res.status !== 404 && res.message) {
+        addToast(res.message, 'error');
         return { success: false, message: res.message };
       }
     } catch (err) {
-      addToast('Network error while updating profile', 'error');
-      return { success: false, message: 'Network error' };
+      console.warn('Backend unavailable, updating in local client storage:', err);
     }
+
+    // 2. Client-side persistent storage fallback (for GitHub Pages live site)
+    if (!user) {
+      addToast('You must be signed in to update profile', 'error');
+      return { success: false };
+    }
+
+    const users = getLocalUsers();
+    const userIndex = users.findIndex(
+      u => u.id === user.id || u.email.toLowerCase() === (user.email || '').toLowerCase()
+    );
+
+    if (userIndex === -1) {
+      addToast('User record not found in session', 'error');
+      return { success: false };
+    }
+
+    const currentRecord = users[userIndex];
+
+    // If changing password:
+    if (formData.newPassword) {
+      if (!formData.currentPassword) {
+        addToast('Current password is required to change password', 'error');
+        return { success: false, message: 'Current password required' };
+      }
+      if (currentRecord.password !== formData.currentPassword) {
+        addToast('Current password does not match', 'error');
+        return { success: false, message: 'Current password does not match' };
+      }
+      if (formData.newPassword.length < 6) {
+        addToast('New password must be at least 6 characters', 'error');
+        return { success: false, message: 'Password too short' };
+      }
+      currentRecord.password = formData.newPassword;
+    }
+
+    // If changing email:
+    if (formData.email && formData.email.toLowerCase() !== currentRecord.email.toLowerCase()) {
+      const emailExists = users.some(
+        u => u.email.toLowerCase() === formData.email.toLowerCase() && u.id !== currentRecord.id
+      );
+      if (emailExists) {
+        addToast('Email address is already in use by another account', 'error');
+        return { success: false, message: 'Email in use' };
+      }
+      currentRecord.email = formData.email.toLowerCase();
+    }
+
+    if (formData.name) currentRecord.name = formData.name;
+    if (formData.phone !== undefined) currentRecord.phone = formData.phone;
+    if (formData.address !== undefined) currentRecord.address = formData.address;
+
+    users[userIndex] = currentRecord;
+    saveLocalUsers(users);
+
+    const safeUser = {
+      id: currentRecord.id,
+      name: currentRecord.name,
+      email: currentRecord.email,
+      role: currentRecord.role,
+      phone: currentRecord.phone || '',
+      address: currentRecord.address || ''
+    };
+
+    setUser(safeUser);
+    localStorage.setItem('dressfeat_user', JSON.stringify(safeUser));
+    addToast('Profile & password updated successfully!', 'success');
+    return { success: true };
   };
 
   return (
