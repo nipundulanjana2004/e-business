@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
-import { X, Lock, Mail, User as UserIcon, Shield } from 'lucide-react';
+import { X, Lock, Mail, User as UserIcon } from 'lucide-react';
 
 export const AuthModal = () => {
-  const { isAuthOpen, setIsAuthOpen, handleLogin, handleRegister, quickDemoLogin } = useShop();
+  const { isAuthOpen, setIsAuthOpen, handleLogin, handleRegister } = useShop();
   const [mode, setMode] = useState('login'); // 'login' | 'register'
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
   const [loading, setLoading] = useState(false);
@@ -85,7 +85,7 @@ export const AuthModal = () => {
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="sophia@example.com"
+                placeholder="patron@example.com"
                 required
                 className="w-full px-3 py-2.5 bg-white border border-neutral-300 focus:outline-none focus:border-black"
               />
@@ -115,31 +115,6 @@ export const AuthModal = () => {
           >
             {loading ? 'Authenticating...' : mode === 'login' ? 'Sign In to Atelier' : 'Create Account'}
           </button>
-
-          {/* Quick 1-Click Demo Logins */}
-          <div className="pt-4 border-t border-neutral-100 space-y-2">
-            <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider block text-center">
-              Quick 1-Click Demo Access
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => quickDemoLogin('customer')}
-                className="py-2 px-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-[11px] font-semibold text-center truncate"
-              >
-                Customer (Sophia)
-              </button>
-              <button
-                type="button"
-                onClick={() => quickDemoLogin('admin')}
-                className="py-2 px-2 bg-neutral-900 hover:bg-black text-white text-[11px] font-semibold text-center truncate flex items-center justify-center space-x-1"
-              >
-                <Shield className="w-3 h-3" />
-                <span>Admin (Atelier)</span>
-              </button>
-            </div>
-          </div>
-
         </form>
 
       </div>

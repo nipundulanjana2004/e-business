@@ -115,3 +115,16 @@ export const subscribeNewsletter = async (email) => {
   });
   return res.json();
 };
+
+export const updateUserProfile = async (profileData, token) => {
+  const res = await fetch(`${API_BASE}/users/profile`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(profileData)
+  });
+  return res.json();
+};
+

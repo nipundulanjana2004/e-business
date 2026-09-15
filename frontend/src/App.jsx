@@ -16,6 +16,7 @@ import { WishlistDrawer } from './components/WishlistDrawer';
 import { AuthModal } from './components/AuthModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { SearchModal } from './components/SearchModal';
+import { UserProfileModal } from './components/UserProfileModal';
 import { InfoModals } from './components/InfoModals';
 import { ToastContainer } from './components/Toast';
 
@@ -65,6 +66,7 @@ export function App() {
       <AuthModal />
       <AdminDashboard />
       <SearchModal />
+      <UserProfileModal />
       <InfoModals />
       <ToastContainer />
     </div>

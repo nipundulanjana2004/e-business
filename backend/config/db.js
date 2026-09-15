@@ -11,7 +11,7 @@ const memoryStore = {
       id: 'usr_admin',
       name: 'Dressfeat Atelier Admin',
       email: 'admin@dressfeat.com',
-      password: 'password123',
+      password: 'DressFeat@Admin2026',
       role: 'admin',
       createdAt: new Date().toISOString()
     },
@@ -73,6 +73,22 @@ const connectDB = async () => {
     });
     isConnected = true;
     console.log('✅ MongoDB Connected: ' + conn.connection.host);
+    // Ensure admin user exists with updated password
+    try {
+      const User = require('../models/User');
+      await User.findOneAndUpdate(
+        { email: 'admin@dressfeat.com' },
+        { 
+          name: 'Dressfeat Atelier Admin',
+          email: 'admin@dressfeat.com',
+          password: 'DressFeat@Admin2026',
+          role: 'admin'
+        },
+        { upsert: true, new: true }
+      );
+    } catch (e) {
+      console.log('Admin sync notice:', e.message);
+    }
 
     // Auto-seed if database is empty
     const Product = require('../models/Product');
@@ -92,7 +108,7 @@ const connectDB = async () => {
         {
           name: 'Dressfeat Atelier Admin',
           email: 'admin@dressfeat.com',
-          password: 'password123',
+          password: 'DressFeat@Admin2026',
           role: 'admin'
         },
         {

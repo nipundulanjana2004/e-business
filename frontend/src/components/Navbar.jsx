@@ -13,6 +13,7 @@ export const Navbar = () => {
     setIsAuthOpen,
     setIsSearchOpen,
     setIsAdminOpen,
+    setIsProfileOpen,
     user,
     handleLogout
   } = useShop();
@@ -140,6 +141,17 @@ export const Navbar = () => {
                     </span>
                   </div>
 
+                  <button
+                    onClick={() => {
+                      setIsProfileOpen(true);
+                      setUserDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50 flex items-center space-x-2 border-b border-neutral-100"
+                  >
+                    <User className="w-3.5 h-3.5 text-neutral-900" />
+                    <span>My Profile & Security</span>
+                  </button>
+
                   {user.role === 'admin' && (
                     <button
                       onClick={() => {
@@ -231,6 +243,65 @@ export const Navbar = () => {
             >
               HOME
             </button>
+          </div>
+
+          <div className="pt-2 border-t border-neutral-200">
+            {user ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between py-1">
+                  <div>
+                    <p className="text-xs font-bold text-neutral-900">{user.name}</p>
+                    <p className="text-[10px] text-neutral-500">{user.email}</p>
+                  </div>
+                  <span className="text-[9px] px-2 py-0.5 bg-neutral-100 text-neutral-700 font-bold uppercase">
+                    {user.role}
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsProfileOpen(true);
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full py-2 px-3 text-xs font-bold uppercase tracking-wider bg-neutral-100 hover:bg-neutral-200 text-left flex items-center space-x-2"
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span>My Profile & Password</span>
+                </button>
+                {user.role === 'admin' && (
+                  <button
+                    onClick={() => {
+                      setIsAdminOpen(true);
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full py-2 px-3 text-xs font-bold uppercase tracking-wider bg-black text-white text-left flex items-center space-x-2"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Admin Atelier Panel</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    handleLogout();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full py-2 px-3 text-xs font-bold uppercase tracking-wider text-red-600 hover:bg-red-50 text-left flex items-center space-x-2"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setIsAuthOpen(true);
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full py-2.5 bg-black text-white text-xs font-bold uppercase tracking-wider flex items-center justify-center space-x-2"
+              >
+                <User className="w-4 h-4" />
+                <span>Sign In / Register</span>
+              </button>
+            )}
           </div>
         </div>
       )}

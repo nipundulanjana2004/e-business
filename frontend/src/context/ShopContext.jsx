@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { fetchProducts, fetchReviews, loginUser, registerUser } from '../services/api';
+import { fetchProducts, fetchReviews, loginUser, registerUser, updateUserProfile } from '../services/api';
 
 const ShopContext = createContext();
 
@@ -23,6 +23,7 @@ export const ShopProvider = ({ children }) => {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isShopOpen, setIsShopOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
   const [isFaqOpen, setIsFaqOpen] = useState(false);
@@ -260,14 +261,29 @@ export const ShopProvider = ({ children }) => {
     localStorage.removeItem('dressfeat_user');
     localStorage.removeItem('dressfeat_token');
     setIsAdminOpen(false);
+    setIsProfileOpen(false);
     addToast('You have been logged out.', 'info');
   };
 
-  const quickDemoLogin = async (role) => {
-    if (role === 'admin') {
-      await handleLogin('admin@dressfeat.com', 'password123');
-    } else {
-      await handleLogin('sophia@example.com', 'password123');
+  const updateProfile = async (formData) => {
+    try {
+      const res = await updateUserProfile(formData, token);
+      if (res.success) {
+        setUser(res.user);
+        if (res.token) {
+          setToken(res.token);
+          localStorage.setItem('dressfeat_token', res.token);
+        }
+        localStorage.setItem('dressfeat_user', JSON.stringify(res.user));
+        addToast(res.message || 'Profile updated successfully', 'success');
+        return { success: true };
+      } else {
+        addToast(res.message || 'Failed to update profile', 'error');
+        return { success: false, message: res.message };
+      }
+    } catch (err) {
+      addToast('Network error while updating profile', 'error');
+      return { success: false, message: 'Network error' };
     }
   };
 
@@ -303,7 +319,9 @@ export const ShopProvider = ({ children }) => {
         setIsAdminOpen,
         isShopOpen,
         setIsShopOpen,
-       isContactOpen,
+        isProfileOpen,
+        setIsProfileOpen,
+        isContactOpen,
         setIsContactOpen,
         isPolicyOpen,
         setIsPolicyOpen,
@@ -334,7 +352,7 @@ export const ShopProvider = ({ children }) => {
         handleLogin,
         handleRegister,
         handleLogout,
-        quickDemoLogin,
+        updateProfile,
         toasts,
         addToast,
         removeToast
