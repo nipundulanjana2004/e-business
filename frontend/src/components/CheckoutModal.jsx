@@ -6,32 +6,46 @@ import confetti from 'canvas-confetti';
 import { createOrder as apiCreateOrder } from '../services/api';
 import { sendOrderConfirmEmail } from '../services/emailService';
 
-// ─── PayHere Configuration (from .env via Vite) ─────────────────────────────
+// ─── PayHere Configuration ──────────────────────────────────────────────────
 const PH_MERCHANT_ID = import.meta.env.VITE_PAYHERE_MERCHANT_ID || '1238333';
-const PH_SECRET      = import.meta.env.VITE_PAYHERE_SECRET      || '';
-const PH_SANDBOX     = import.meta.env.VITE_PAYHERE_SANDBOX !== 'false';
+const RAW_SECRET     = import.meta.env.VITE_PAYHERE_SECRET      || '4066085982411028965413319993263855172799';
+const PH_SANDBOX     = import.meta.env.VITE_PAYHERE_SANDBOX === 'true'; // Default to false for live merchant ID 1238333
 
 /**
- * PayHere MD5 hash formula:
- * hash = MD5( merchant_id + order_id + amount_formatted + currency + MD5(secret).toUpperCase() ).toUpperCase()
+ * Safely extract raw secret (decodes base64 if needed)
  */
-function generateHash(orderId, amount, currency = 'LKR') {
-  if (!PH_SECRET) {
+function getRawSecret(secretStr) {
+  if (!secretStr) return '';
+  try {
+    if (secretStr.endsWith('=') || (/^[A-Za-z0-9+/=]+$/.test(secretStr) && secretStr.length > 30 && !/^\d+$/.test(secretStr))) {
+      return atob(secretStr);
+    }
+  } catch (e) {}
+  return secretStr;
+}
+
+/**
+ * PayHere MD5 Hash Formula:
+ * hash = MD5( merchant_id + order_id + amount_formatted + currency + MD5(merchant_secret).toUpperCase() ).toUpperCase()
+ */
+function generateHash(merchantId, orderId, amount, currency = 'LKR') {
+  const secret = getRawSecret(RAW_SECRET);
+  if (!secret) {
     console.warn('[PayHere] No secret configured — hash will be empty');
     return '';
   }
-  const secretMd5   = md5(PH_SECRET).toUpperCase();
-  const amountFixed  = parseFloat(amount).toFixed(2);
-  const raw          = PH_MERCHANT_ID + orderId + amountFixed + currency + secretMd5;
-  return md5(raw).toUpperCase();
+  const hashedSecret   = md5(secret).toUpperCase();
+  const amountFormatted = Number(amount).toFixed(2);
+  const rawString       = merchantId + orderId + amountFormatted + currency + hashedSecret;
+  return md5(rawString).toUpperCase();
 }
 
 /**
  * Launch PayHere checkout via JS SDK (loaded in index.html).
- * Falls back to redirect if SDK hasn't loaded yet.
+ * Falls back to direct form post / popup if SDK hasn't loaded yet.
  */
 function launchPayHere(data, onSuccess, onDismiss, onError) {
-  const hash = generateHash(data.order_id, data.amount, data.currency || 'LKR');
+  const hash = generateHash(PH_MERCHANT_ID, data.order_id, data.amount, data.currency || 'LKR');
 
   const payment = {
     sandbox:           PH_SANDBOX,
@@ -41,7 +55,7 @@ function launchPayHere(data, onSuccess, onDismiss, onError) {
     notify_url:        '',
     order_id:          data.order_id,
     items:             data.items,
-    amount:            parseFloat(data.amount).toFixed(2),
+    amount:            Number(data.amount).toFixed(2),
     currency:          data.currency || 'LKR',
     hash:              hash,
     first_name:        data.first_name,
@@ -57,6 +71,8 @@ function launchPayHere(data, onSuccess, onDismiss, onError) {
     custom_1:          '',
     custom_2:          '',
   };
+
+  console.log('[PayHere Init]', { merchant_id: PH_MERCHANT_ID, sandbox: PH_SANDBOX, order_id: data.order_id, hash });
 
   if (typeof window.payhere !== 'undefined') {
     window.payhere.onCompleted = onSuccess;
@@ -294,9 +310,9 @@ export const CheckoutModal = () => {
                   <div className="mt-3 p-3 bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-start gap-2">
                     <ShieldCheck className="w-4 h-4 flex-shrink-0 text-blue-600 mt-0.5" />
                     <div>
-                      <p className="font-bold">MD5 Hash Secured Payment</p>
+                      <p className="font-bold">MD5 Hash Secured Payment (Merchant ID: {PH_MERCHANT_ID})</p>
                       <p className="text-blue-600 mt-0.5">
-                        Your payment is cryptographically signed with MD5 hash before sending to PayHere.
+                        Your payment request is cryptographically signed with MD5 hash before sending to PayHere.
                         Card details are handled on PayHere's PCI-DSS certified servers.
                       </p>
                     </div>
