@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { fetchProducts, fetchReviews, loginUser, registerUser, updateUserProfile } from '../services/api';
 import { fallbackProducts, fallbackReviews } from '../data/fallbackData';
+import { sendWelcomeEmail } from '../services/emailService';
 
 const ShopContext = createContext();
 
@@ -10,7 +11,7 @@ export const ShopProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   // Navigation & View State
-  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'women' | 'men' | 'shop'
+  const [activeTab, setActiveTab] = useState('home');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [priceRange, setPriceRange] = useState(10000);
@@ -30,76 +31,41 @@ export const ShopProvider = ({ children }) => {
   const [isFaqOpen, setIsFaqOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
 
-  // Cart & Wishlist with localStorage persistence
+  // Cart & Wishlist
   const [cart, setCart] = useState(() => {
-    try {
-      const saved = localStorage.getItem('dressfeat_cart');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    try { const s = localStorage.getItem('dressfeat_cart'); return s ? JSON.parse(s) : []; } catch { return []; }
   });
-
   const [wishlist, setWishlist] = useState(() => {
-    try {
-      const saved = localStorage.getItem('dressfeat_wishlist');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    try { const s = localStorage.getItem('dressfeat_wishlist'); return s ? JSON.parse(s) : []; } catch { return []; }
   });
 
-  // User Auth State
+  // Auth
   const [user, setUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('dressfeat_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
+    try { const s = localStorage.getItem('dressfeat_user'); return s ? JSON.parse(s) : null; } catch { return null; }
   });
   const [token, setToken] = useState(() => localStorage.getItem('dressfeat_token') || '');
 
-  // Promo Code
+  // Promo
   const [promoCode, setPromoCode] = useState('');
   const [discountPercent, setDiscountPercent] = useState(0);
 
-  // Toast Notifications
+  // Toasts
   const [toasts, setToasts] = useState([]);
-
   const addToast = (message, type = 'info') => {
     const id = Date.now() + Math.random();
     setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4000);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
   };
+  const removeToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
 
-  const removeToast = (id) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  };
-
-  // Initial Load with automatic static fallback for GitHub Pages
+  // Data loading
   const loadData = async () => {
     try {
       setLoading(true);
-      const [prodRes, revRes] = await Promise.all([
-        fetchProducts(),
-        fetchReviews()
-      ]);
-      if (prodRes && prodRes.success && Array.isArray(prodRes.products) && prodRes.products.length > 0) {
-        setProducts(prodRes.products);
-      } else {
-        setProducts(fallbackProducts);
-      }
-
-      if (revRes && revRes.success && Array.isArray(revRes.reviews) && revRes.reviews.length > 0) {
-        setReviews(revRes.reviews);
-      } else {
-        setReviews(fallbackReviews);
-      }
-    } catch (err) {
-      console.warn('Backend unavailable, using static catalog:', err);
+      const [prodRes, revRes] = await Promise.all([fetchProducts(), fetchReviews()]);
+      setProducts(prodRes && prodRes.success && Array.isArray(prodRes.products) && prodRes.products.length > 0 ? prodRes.products : fallbackProducts);
+      setReviews(revRes && revRes.success && Array.isArray(revRes.reviews) && revRes.reviews.length > 0 ? revRes.reviews : fallbackReviews);
+    } catch {
       setProducts(fallbackProducts);
       setReviews(fallbackReviews);
     } finally {
@@ -107,451 +73,204 @@ export const ShopProvider = ({ children }) => {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
+  useEffect(() => { localStorage.setItem('dressfeat_cart', JSON.stringify(cart)); }, [cart]);
+  useEffect(() => { localStorage.setItem('dressfeat_wishlist', JSON.stringify(wishlist)); }, [wishlist]);
 
-  useEffect(() => {
-    localStorage.setItem('dressfeat_cart', JSON.stringify(cart));
-  }, [cart]);
-
-  useEffect(() => {
-    localStorage.setItem('dressfeat_wishlist', JSON.stringify(wishlist));
-  }, [wishlist]);
-
-  // Cart Operations
+  // Cart
   const addToCart = (product, size = null, color = null, qty = 1) => {
     const chosenSize = size || (product.sizes && product.sizes[0]) || 'M';
     const chosenColor = color || (product.colors && product.colors[0]?.name) || 'Standard';
     const cartItemId = `${product.id || product._id}-${chosenSize}-${chosenColor}`;
-
     setCart(prev => {
-      const existing = prev.find(item => item.cartItemId === cartItemId);
-      if (existing) {
-        return prev.map(item =>
-          item.cartItemId === cartItemId
-            ? { ...item, qty: item.qty + qty }
-            : item
-        );
-      } else {
-        return [
-          ...prev,
-          {
-            ...product,
-            productId: product.id || product._id,
-            cartItemId,
-            selectedSize: chosenSize,
-            selectedColor: chosenColor,
-            qty
-          }
-        ];
-      }
+      const existing = prev.find(i => i.cartItemId === cartItemId);
+      if (existing) return prev.map(i => i.cartItemId === cartItemId ? { ...i, qty: i.qty + qty } : i);
+      return [...prev, { ...product, productId: product.id || product._id, cartItemId, selectedSize: chosenSize, selectedColor: chosenColor, qty }];
     });
-
     addToast(`Added "${product.name}" (${chosenSize}) to your bag.`, 'success');
   };
+  const removeFromCart = (cartItemId) => { setCart(prev => prev.filter(i => i.cartItemId !== cartItemId)); addToast('Item removed.', 'info'); };
+  const updateCartQty = (cartItemId, delta) => setCart(prev => prev.map(i => i.cartItemId === cartItemId ? ({ ...i, qty: i.qty + delta }) : i).filter(i => i.qty > 0));
+  const clearCart = () => setCart([]);
 
-  const removeFromCart = (cartItemId) => {
-    setCart(prev => prev.filter(item => item.cartItemId !== cartItemId));
-    addToast('Item removed from shopping bag.', 'info');
-  };
-
-  const updateCartQty = (cartItemId, delta) => {
-    setCart(prev =>
-      prev
-        .map(item => {
-          if (item.cartItemId === cartItemId) {
-            const newQty = item.qty + delta;
-            return newQty > 0 ? { ...item, qty: newQty } : null;
-          }
-          return item;
-        })
-        .filter(Boolean)
-    );
-  };
-
-  const clearCart = () => {
-    setCart([]);
-  };
-
-  // Wishlist Operations
+  // Wishlist
   const toggleWishlist = (product) => {
-    const prodId = product.id || product._id;
-    const exists = wishlist.some(item => (item.id || item._id) === prodId);
-
-    if (exists) {
-      setWishlist(prev => prev.filter(item => (item.id || item._id) !== prodId));
-      addToast(`Removed "${product.name}" from wishlist.`, 'info');
-    } else {
-      setWishlist(prev => [...prev, product]);
-      addToast(`Saved "${product.name}" to wishlist.`, 'success');
-    }
+    const id = product.id || product._id;
+    const exists = wishlist.some(i => (i.id || i._id) === id);
+    if (exists) { setWishlist(prev => prev.filter(i => (i.id || i._id) !== id)); addToast(`Removed from wishlist.`, 'info'); }
+    else { setWishlist(prev => [...prev, product]); addToast(`Saved "${product.name}" to wishlist.`, 'success'); }
   };
+  const isInWishlist = (productId) => wishlist.some(i => (i.id || i._id) === productId);
 
-  const isInWishlist = (productId) => {
-    return wishlist.some(item => (item.id || item._id) === productId);
-  };
-
-  // Coupon Voucher
+  // Coupons
   const applyCoupon = (code) => {
     const clean = code.trim().toUpperCase();
-    if (clean === 'FEAT2026' || clean === 'DRESSFEAT15') {
-      setDiscountPercent(15);
-      setPromoCode(clean);
-      addToast('Promo code FEAT2026 applied! 15% discount unlocked.', 'success');
-      return true;
-    } else if (clean === 'VIP20') {
-      setDiscountPercent(20);
-      setPromoCode(clean);
-      addToast('VIP voucher applied! 20% discount unlocked.', 'success');
-      return true;
-    } else {
-      addToast('Invalid coupon code. Try FEAT2026 for 15% off.', 'error');
-      return false;
-    }
+    if (clean === 'FEAT2026' || clean === 'DRESSFEAT15') { setDiscountPercent(15); setPromoCode(clean); addToast('15% discount applied!', 'success'); return true; }
+    if (clean === 'VIP20') { setDiscountPercent(20); setPromoCode(clean); addToast('20% VIP discount applied!', 'success'); return true; }
+    addToast('Invalid coupon. Try FEAT2026.', 'error'); return false;
   };
-
-  const removeCoupon = () => {
-    setDiscountPercent(0);
-    setPromoCode('');
-  };
+  const removeCoupon = () => { setDiscountPercent(0); setPromoCode(''); };
 
   // Calculations
-  const cartSubtotal = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+  const cartSubtotal = cart.reduce((a, i) => a + i.price * i.qty, 0);
   const discountAmount = Math.round(cartSubtotal * (discountPercent / 100));
   const freeShippingThreshold = 6000;
   const shippingFee = cartSubtotal >= freeShippingThreshold || cartSubtotal === 0 ? 0 : 350;
   const cartTotal = cartSubtotal - discountAmount + shippingFee;
-  const cartCount = cart.reduce((acc, item) => acc + item.qty, 0);
+  const cartCount = cart.reduce((a, i) => a + i.qty, 0);
 
-  // Local persistent user repository (ensures registration, login & password updates work on GitHub Pages)
+  // ─── Client-side user DB (GitHub Pages fallback) ──────────────────────────
   const getLocalUsers = () => {
     try {
       const raw = localStorage.getItem('dressfeat_users_db');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {
-      // ignore
-    }
-    const defaultUsers = [
-      {
-        id: 'usr_admin',
-        name: 'Dressfeat Atelier Admin',
-        email: 'admin@dressfeat.com',
-        password: 'DressFeat@Admin2026',
-        role: 'admin',
-        phone: '+94 11 234 5678',
-        address: 'Atelier Flagship, Colombo',
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: 'usr_demo',
-        name: 'Sophia Laurent',
-        email: 'sophia@example.com',
-        password: 'password123',
-        role: 'customer',
-        phone: '+33 1 42 68 55 00',
-        address: '45 Avenue Montaigne, Paris',
-        createdAt: new Date().toISOString()
-      }
+      if (raw) { const p = JSON.parse(raw); if (Array.isArray(p) && p.length > 0) return p; }
+    } catch {}
+    const defaults = [
+      { id: 'usr_admin', name: 'Dressfeat Atelier Admin', email: 'admin@dressfeat.com', password: 'DressFeat@Admin2026', role: 'admin', phone: '+94 11 234 5678', address: 'Atelier Flagship, Colombo', avatar: null, createdAt: new Date().toISOString() },
+      { id: 'usr_demo',  name: 'Sophia Laurent', email: 'sophia@example.com', password: 'password123', role: 'customer', phone: '+33 1 42 68 55 00', address: '45 Avenue Montaigne, Paris', avatar: null, createdAt: new Date().toISOString() }
     ];
-    localStorage.setItem('dressfeat_users_db', JSON.stringify(defaultUsers));
-    return defaultUsers;
+    localStorage.setItem('dressfeat_users_db', JSON.stringify(defaults));
+    return defaults;
   };
+  const saveLocalUsers = (users) => localStorage.setItem('dressfeat_users_db', JSON.stringify(users));
 
-  const saveLocalUsers = (users) => {
-    localStorage.setItem('dressfeat_users_db', JSON.stringify(users));
-  };
-
-  // Authentication: supports both live Node backend and static GitHub Pages
+  // ─── Login ────────────────────────────────────────────────────────────────
   const handleLogin = async (email, password) => {
     const cleanEmail = (email || '').trim().toLowerCase();
-
-    // 1. Try remote API first if backend server is online
     try {
       const data = await loginUser(cleanEmail, password);
       if (data && data.success) {
-        setUser(data.user);
-        setToken(data.token);
-        localStorage.setItem('dressfeat_user', JSON.stringify(data.user));
+        const u = { ...data.user, avatar: data.user.avatar || null };
+        setUser(u); setToken(data.token);
+        localStorage.setItem('dressfeat_user', JSON.stringify(u));
         localStorage.setItem('dressfeat_token', data.token);
-        setIsAuthOpen(false);
-        addToast(`Welcome back, ${data.user.name}!`, 'success');
-        return { success: true };
+        setIsAuthOpen(false); addToast(`Welcome back, ${u.name}!`, 'success'); return { success: true };
       }
-      if (data && data.status && data.status !== 404 && data.message) {
-        addToast(data.message, 'error');
-        return { success: false, message: data.message };
-      }
-    } catch (err) {
-      console.warn('Backend unavailable, using local client storage:', err);
-    }
-
-    // 2. Client-side persistent storage fallback (for GitHub Pages live site)
+      if (data && data.status && data.status !== 404 && data.message) { addToast(data.message, 'error'); return { success: false }; }
+    } catch {}
     const users = getLocalUsers();
     const matched = users.find(u => u.email.toLowerCase() === cleanEmail && u.password === password);
     if (matched) {
-      const safeUser = {
-        id: matched.id,
-        name: matched.name,
-        email: matched.email,
-        role: matched.role,
-        phone: matched.phone || '',
-        address: matched.address || ''
-      };
-      const localToken = 'token_' + Date.now();
-      setUser(safeUser);
-      setToken(localToken);
+      const safeUser = { id: matched.id, name: matched.name, email: matched.email, role: matched.role, phone: matched.phone || '', address: matched.address || '', avatar: matched.avatar || null };
+      const tok = 'token_' + Date.now();
+      setUser(safeUser); setToken(tok);
       localStorage.setItem('dressfeat_user', JSON.stringify(safeUser));
-      localStorage.setItem('dressfeat_token', localToken);
-      setIsAuthOpen(false);
-      addToast(`Welcome back, ${matched.name}!`, 'success');
-      return { success: true };
+      localStorage.setItem('dressfeat_token', tok);
+      setIsAuthOpen(false); addToast(`Welcome back, ${matched.name}!`, 'success'); return { success: true };
     }
-
-    addToast('Invalid email or password. Please try again.', 'error');
-    return { success: false, message: 'Invalid email or password' };
+    addToast('Invalid email or password.', 'error'); return { success: false };
   };
 
+  // ─── Register ─────────────────────────────────────────────────────────────
   const handleRegister = async (name, email, password) => {
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanName = (name || '').trim();
-
-    // 1. Try remote API first if backend server is online
     try {
       const data = await registerUser(cleanName, cleanEmail, password);
       if (data && data.success) {
-        setUser(data.user);
-        setToken(data.token);
-        localStorage.setItem('dressfeat_user', JSON.stringify(data.user));
+        const u = { ...data.user, avatar: null };
+        setUser(u); setToken(data.token);
+        localStorage.setItem('dressfeat_user', JSON.stringify(u));
         localStorage.setItem('dressfeat_token', data.token);
         setIsAuthOpen(false);
-        addToast(`Account created! Welcome to DRESSFEAT, ${data.user.name}.`, 'success');
+        addToast(`Account created! Welcome, ${u.name}.`, 'success');
+        sendWelcomeEmail(u).catch(() => {});
         return { success: true };
       }
-      if (data && data.status && data.status !== 404 && data.message) {
-        addToast(data.message, 'error');
-        return { success: false, message: data.message };
-      }
-    } catch (err) {
-      console.warn('Backend unavailable, registering in local client storage:', err);
-    }
-
-    // 2. Client-side persistent storage fallback (for GitHub Pages live site)
+      if (data && data.status && data.status !== 404 && data.message) { addToast(data.message, 'error'); return { success: false }; }
+    } catch {}
     const users = getLocalUsers();
-    const existing = users.find(u => u.email.toLowerCase() === cleanEmail);
-    if (existing) {
-      addToast('Email is already registered. Please sign in.', 'error');
-      return { success: false, message: 'Email is already registered' };
-    }
-
-    const newUser = {
-      id: 'usr_' + Date.now(),
-      name: cleanName,
-      email: cleanEmail,
-      password: password,
-      role: 'customer',
-      phone: '',
-      address: '',
-      createdAt: new Date().toISOString()
-    };
-
-    users.push(newUser);
-    saveLocalUsers(users);
-
-    const safeUser = {
-      id: newUser.id,
-      name: newUser.name,
-      email: newUser.email,
-      role: newUser.role,
-      phone: '',
-      address: ''
-    };
-    const localToken = 'token_' + Date.now();
-
-    setUser(safeUser);
-    setToken(localToken);
+    if (users.find(u => u.email.toLowerCase() === cleanEmail)) { addToast('Email already registered. Please sign in.', 'error'); return { success: false }; }
+    const newUser = { id: 'usr_' + Date.now(), name: cleanName, email: cleanEmail, password, role: 'customer', phone: '', address: '', avatar: null, createdAt: new Date().toISOString() };
+    users.push(newUser); saveLocalUsers(users);
+    const safeUser = { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role, phone: '', address: '', avatar: null };
+    const tok = 'token_' + Date.now();
+    setUser(safeUser); setToken(tok);
     localStorage.setItem('dressfeat_user', JSON.stringify(safeUser));
-    localStorage.setItem('dressfeat_token', localToken);
+    localStorage.setItem('dressfeat_token', tok);
     setIsAuthOpen(false);
-    addToast(`Account created! Welcome to DRESSFEAT, ${safeUser.name}.`, 'success');
+    addToast(`Welcome to DRESSFEAT, ${safeUser.name}!`, 'success');
+    sendWelcomeEmail(safeUser).catch(() => {});
     return { success: true };
   };
 
+  // ─── Logout ───────────────────────────────────────────────────────────────
   const handleLogout = () => {
-    setUser(null);
-    setToken('');
+    setUser(null); setToken('');
     localStorage.removeItem('dressfeat_user');
     localStorage.removeItem('dressfeat_token');
-    setIsAdminOpen(false);
-    setIsProfileOpen(false);
+    setIsAdminOpen(false); setIsProfileOpen(false);
     addToast('You have been logged out.', 'info');
   };
 
+  // ─── Update Profile (avatar aware) ───────────────────────────────────────
   const updateProfile = async (formData) => {
-    // 1. Try remote API first if backend server is online
     try {
       const res = await updateUserProfile(formData, token);
       if (res && res.success) {
-        setUser(res.user);
-        if (res.token) {
-          setToken(res.token);
-          localStorage.setItem('dressfeat_token', res.token);
-        }
-        localStorage.setItem('dressfeat_user', JSON.stringify(res.user));
-        addToast(res.message || 'Profile updated successfully', 'success');
+        const updatedUser = { ...res.user, avatar: formData.avatar !== undefined ? formData.avatar : (user ? user.avatar : null) };
+        setUser(updatedUser);
+        if (res.token) { setToken(res.token); localStorage.setItem('dressfeat_token', res.token); }
+        localStorage.setItem('dressfeat_user', JSON.stringify(updatedUser));
+        addToast(res.message || 'Profile updated!', 'success');
         return { success: true };
       }
-      if (res && res.status && res.status !== 404 && res.message) {
-        addToast(res.message, 'error');
-        return { success: false, message: res.message };
-      }
-    } catch (err) {
-      console.warn('Backend unavailable, updating in local client storage:', err);
-    }
+      if (res && res.status && res.status !== 404 && res.message) { addToast(res.message, 'error'); return { success: false, message: res.message }; }
+    } catch {}
 
-    // 2. Client-side persistent storage fallback (for GitHub Pages live site)
-    if (!user) {
-      addToast('You must be signed in to update profile', 'error');
-      return { success: false };
-    }
-
+    if (!user) { addToast('You must be signed in.', 'error'); return { success: false }; }
     const users = getLocalUsers();
-    const userIndex = users.findIndex(
-      u => u.id === user.id || u.email.toLowerCase() === (user.email || '').toLowerCase()
-    );
+    const idx = users.findIndex(u => u.id === user.id || u.email.toLowerCase() === (user.email || '').toLowerCase());
+    if (idx === -1) { addToast('User record not found.', 'error'); return { success: false }; }
+    const rec = { ...users[idx] };
 
-    if (userIndex === -1) {
-      addToast('User record not found in session', 'error');
-      return { success: false };
-    }
-
-    const currentRecord = users[userIndex];
-
-    // If changing password:
+    // Password change
     if (formData.newPassword) {
-      if (!formData.currentPassword) {
-        addToast('Current password is required to change password', 'error');
-        return { success: false, message: 'Current password required' };
-      }
-      if (currentRecord.password !== formData.currentPassword) {
-        addToast('Current password does not match', 'error');
-        return { success: false, message: 'Current password does not match' };
-      }
-      if (formData.newPassword.length < 6) {
-        addToast('New password must be at least 6 characters', 'error');
-        return { success: false, message: 'Password too short' };
-      }
-      currentRecord.password = formData.newPassword;
+      if (!formData.currentPassword) return { success: false, message: 'Current password required' };
+      if (rec.password !== formData.currentPassword) { addToast('Current password is incorrect.', 'error'); return { success: false, message: 'Current password incorrect' }; }
+      if (formData.newPassword.length < 6) return { success: false, message: 'Password too short' };
+      rec.password = formData.newPassword;
     }
 
-    // If changing email:
-    if (formData.email && formData.email.toLowerCase() !== currentRecord.email.toLowerCase()) {
-      const emailExists = users.some(
-        u => u.email.toLowerCase() === formData.email.toLowerCase() && u.id !== currentRecord.id
-      );
-      if (emailExists) {
-        addToast('Email address is already in use by another account', 'error');
-        return { success: false, message: 'Email in use' };
-      }
-      currentRecord.email = formData.email.toLowerCase();
+    // Email uniqueness
+    if (formData.email && formData.email.toLowerCase() !== rec.email.toLowerCase()) {
+      if (users.some(u => u.email.toLowerCase() === formData.email.toLowerCase() && u.id !== rec.id)) { addToast('Email already in use.', 'error'); return { success: false, message: 'Email in use' }; }
+      rec.email = formData.email.toLowerCase();
     }
 
-    if (formData.name) currentRecord.name = formData.name;
-    if (formData.phone !== undefined) currentRecord.phone = formData.phone;
-    if (formData.address !== undefined) currentRecord.address = formData.address;
+    if (formData.name) rec.name = formData.name;
+    if (formData.phone !== undefined) rec.phone = formData.phone;
+    if (formData.address !== undefined) rec.address = formData.address;
+    if (formData.avatar !== undefined) rec.avatar = formData.avatar;
 
-    users[userIndex] = currentRecord;
+    users[idx] = rec;
     saveLocalUsers(users);
-
-    const safeUser = {
-      id: currentRecord.id,
-      name: currentRecord.name,
-      email: currentRecord.email,
-      role: currentRecord.role,
-      phone: currentRecord.phone || '',
-      address: currentRecord.address || ''
-    };
-
+    const safeUser = { id: rec.id, name: rec.name, email: rec.email, role: rec.role, phone: rec.phone || '', address: rec.address || '', avatar: rec.avatar || null };
     setUser(safeUser);
     localStorage.setItem('dressfeat_user', JSON.stringify(safeUser));
-    addToast('Profile & password updated successfully!', 'success');
+    addToast('Profile updated successfully!', 'success');
     return { success: true };
   };
 
   return (
-    <ShopContext.Provider
-      value={{
-        products,
-        setProducts,
-        reviews,
-        loading,
-        loadData,
-        activeTab,
-        setActiveTab,
-        selectedCategory,
-        setSelectedCategory,
-        searchQuery,
-        setSearchQuery,
-        priceRange,
-        setPriceRange,
-        sortBy,
-        setSortBy,
-        isCartOpen,
-        setIsCartOpen,
-        isWishlistOpen,
-        setIsWishlistOpen,
-        isAuthOpen,
-        setIsAuthOpen,
-        isSearchOpen,
-        setIsSearchOpen,
-        isCheckoutOpen,
-        setIsCheckoutOpen,
-        isAdminOpen,
-        setIsAdminOpen,
-        isShopOpen,
-        setIsShopOpen,
-        isProfileOpen,
-        setIsProfileOpen,
-        isContactOpen,
-        setIsContactOpen,
-        isPolicyOpen,
-        setIsPolicyOpen,
-        isFaqOpen,
-        setIsFaqOpen,
-        selectedProduct,
-        setSelectedProduct,
-        cart,
-        cartCount,
-        addToCart,
-        removeFromCart,
-        updateCartQty,
-        clearCart,
-        wishlist,
-        toggleWishlist,
-        isInWishlist,
-        promoCode,
-        discountPercent,
-        discountAmount,
-        cartSubtotal,
-        freeShippingThreshold,
-        shippingFee,
-        cartTotal,
-        applyCoupon,
-        removeCoupon,
-        user,
-        token,
-        handleLogin,
-        handleRegister,
-        handleLogout,
-        updateProfile,
-        toasts,
-        addToast,
-        removeToast
-      }}
-    >
+    <ShopContext.Provider value={{
+      products, setProducts, reviews, loading, loadData,
+      activeTab, setActiveTab, selectedCategory, setSelectedCategory,
+      searchQuery, setSearchQuery, priceRange, setPriceRange, sortBy, setSortBy,
+      isCartOpen, setIsCartOpen, isWishlistOpen, setIsWishlistOpen,
+      isAuthOpen, setIsAuthOpen, isSearchOpen, setIsSearchOpen,
+      isCheckoutOpen, setIsCheckoutOpen, isAdminOpen, setIsAdminOpen,
+      isShopOpen, setIsShopOpen, isProfileOpen, setIsProfileOpen,
+      isContactOpen, setIsContactOpen, isPolicyOpen, setIsPolicyOpen,
+      isFaqOpen, setIsFaqOpen, selectedProduct, setSelectedProduct,
+      cart, cartCount, addToCart, removeFromCart, updateCartQty, clearCart,
+      wishlist, toggleWishlist, isInWishlist,
+      promoCode, discountPercent, discountAmount, cartSubtotal,
+      freeShippingThreshold, shippingFee, cartTotal,
+      applyCoupon, removeCoupon,
+      user, token, handleLogin, handleRegister, handleLogout, updateProfile,
+      toasts, addToast, removeToast
+    }}>
       {children}
     </ShopContext.Provider>
   );

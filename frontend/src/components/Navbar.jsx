@@ -125,10 +125,18 @@ export const Navbar = () => {
                   if (user) setUserDropdownOpen(!userDropdownOpen);
                   else setIsAuthOpen(true);
                 }}
-                className="p-1.5 text-neutral-700 hover:text-black transition-colors rounded-full hover:bg-neutral-100"
+                className="transition-colors rounded-full hover:ring-2 hover:ring-neutral-300"
                 title={user ? `Signed in as ${user.name}` : 'Sign In / Register'}
               >
-                <User className="w-4 h-4 sm:w-5 sm:h-5" />
+                {user && user.avatar ? (
+                  <img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full object-cover border border-neutral-200" />
+                ) : user ? (
+                  <div className="w-8 h-8 rounded-full bg-amber-400 flex items-center justify-center text-black font-bold text-xs border border-amber-300">
+                    {(user.name || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                  </div>
+                ) : (
+                  <div className="p-1.5 text-neutral-700 hover:text-black"><User className="w-4 h-4 sm:w-5 sm:h-5" /></div>
+                )}
               </button>
 
               {user && userDropdownOpen && (
