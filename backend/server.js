@@ -32,6 +32,7 @@ connectDB();
 app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/orders', require('./routes/orderRoutes'));
+app.use('/api/payhere', require('./routes/payhereRoutes'));
 app.use('/api/seed', require('./routes/seedRoutes'));
 
 // Direct File Upload endpoint (Base64 or binary)

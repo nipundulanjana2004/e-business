@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useShop } from '../context/ShopContext';
 import { X, Plus, Shield, Trash2, Upload, Check, AlertTriangle } from 'lucide-react';
-import { createProduct, updateProduct, deleteProduct, fetchOrders, updateOrderStatus } from '../services/api';
+import { createProduct, updateProduct, deleteProduct, fetchOrders, updateOrderStatus, deleteOrder } from '../services/api';
 
 export const AdminDashboard = () => {
   const { isAdminOpen, setIsAdminOpen, products, loadData, token, addToast } = useShop();
@@ -119,12 +119,22 @@ export const AdminDashboard = () => {
     }
   };
 
+  const explainFailure = (res, fallback) => {
+    if (res && (res.status === 401 || res.status === 403)) {
+      return 'Admin session invalid. Please Sign Out and sign in again as admin@dressfeat.com (backend server must be running).';
+    }
+    if (res && res.error) return 'Cannot reach the backend server. Is it running on port 5000?';
+    return (res && res.serverMessage) || fallback;
+  };
+
   const handleDeleteProduct = async (id) => {
     if (window.confirm('Delete this garment from catalog?')) {
       const res = await deleteProduct(id, token);
       if (res.success) {
         addToast('Garment deleted from catalog', 'info');
         loadData();
+      } else {
+        addToast(explainFailure(res, 'Could not delete garment'), 'error');
       }
     }
   };
@@ -132,8 +142,22 @@ export const AdminDashboard = () => {
   const handleStatusChange = async (orderId, newStatus) => {
     const res = await updateOrderStatus(orderId, newStatus, token);
     if (res.success) {
-      setOrders(orders.map(o => (o._id === orderId || o.id === orderId) ? { ...o, status: newStatus } : o));
+      setOrders(prev => prev.map(o => (o._id === orderId || o.id === orderId) ? { ...o, status: newStatus } : o));
       addToast(`Order status updated to ${newStatus}`, 'success');
+    } else {
+      addToast(explainFailure(res, 'Could not update order status'), 'error');
+    }
+  };
+
+  const handleDeleteOrder = async (orderId) => {
+    if (window.confirm('Delete this order permanently?')) {
+      const res = await deleteOrder(orderId, token);
+      if (res.success) {
+        setOrders(prev => prev.filter(o => o._id !== orderId && o.id !== orderId));
+        addToast('Order deleted', 'info');
+      } else {
+        addToast(explainFailure(res, 'Could not delete order'), 'error');
+      }
     }
   };
 
@@ -340,6 +364,13 @@ export const AdminDashboard = () => {
                           <option value="Delivered">Delivered</option>
                           <option value="Cancelled">Cancelled</option>
                         </select>
+                        <button
+                          onClick={() => handleDeleteOrder(ord._id || ord.id)}
+                          className="p-1.5 text-neutral-400 hover:text-red-600"
+                          title="Delete Order"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
 

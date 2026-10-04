@@ -1,96 +1,10 @@
 import React, { useState } from 'react';
-import md5 from 'md5';
 import { useShop } from '../context/ShopContext';
 import { X, CheckCircle, CreditCard, Truck, ShieldCheck, Printer, Banknote } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { createOrder as apiCreateOrder } from '../services/api';
+import { createOrder as apiCreateOrder, fetchPayHereHash } from '../services/api';
 import { sendOrderConfirmEmail } from '../services/emailService';
 
-// ─── PayHere Configuration ──────────────────────────────────────────────────
-const PH_MERCHANT_ID = import.meta.env.VITE_PAYHERE_MERCHANT_ID || '1238333';
-const RAW_SECRET     = import.meta.env.VITE_PAYHERE_SECRET      || '4066085982411028965413319993263855172799';
-const PH_SANDBOX     = import.meta.env.VITE_PAYHERE_SANDBOX === 'true'; // Default to false for live merchant ID 1238333
-
-/**
- * Safely extract raw secret (decodes base64 if needed)
- */
-function getRawSecret(secretStr) {
-  if (!secretStr) return '';
-  try {
-    if (secretStr.endsWith('=') || (/^[A-Za-z0-9+/=]+$/.test(secretStr) && secretStr.length > 30 && !/^\d+$/.test(secretStr))) {
-      return atob(secretStr);
-    }
-  } catch (e) {}
-  return secretStr;
-}
-
-/**
- * PayHere MD5 Hash Formula:
- * hash = MD5( merchant_id + order_id + amount_formatted + currency + MD5(merchant_secret).toUpperCase() ).toUpperCase()
- */
-function generateHash(merchantId, orderId, amount, currency = 'LKR') {
-  const secret = getRawSecret(RAW_SECRET);
-  if (!secret) {
-    console.warn('[PayHere] No secret configured — hash will be empty');
-    return '';
-  }
-  const hashedSecret   = md5(secret).toUpperCase();
-  const amountFormatted = Number(amount).toFixed(2);
-  const rawString       = merchantId + orderId + amountFormatted + currency + hashedSecret;
-  return md5(rawString).toUpperCase();
-}
-
-/**
- * Launch PayHere checkout via JS SDK (loaded in index.html).
- * Falls back to direct form post / popup if SDK hasn't loaded yet.
- */
-function launchPayHere(data, onSuccess, onDismiss, onError) {
-  const hash = generateHash(PH_MERCHANT_ID, data.order_id, data.amount, data.currency || 'LKR');
-
-  const payment = {
-    sandbox:           PH_SANDBOX,
-    merchant_id:       PH_MERCHANT_ID,
-    return_url:        window.location.href,
-    cancel_url:        window.location.href,
-    notify_url:        '',
-    order_id:          data.order_id,
-    items:             data.items,
-    amount:            Number(data.amount).toFixed(2),
-    currency:          data.currency || 'LKR',
-    hash:              hash,
-    first_name:        data.first_name,
-    last_name:         data.last_name || '',
-    email:             data.email,
-    phone:             data.phone,
-    address:           data.address,
-    city:              data.city || 'Colombo',
-    country:           data.country || 'Sri Lanka',
-    delivery_address:  data.address,
-    delivery_city:     data.city || 'Colombo',
-    delivery_country:  data.country || 'Sri Lanka',
-    custom_1:          '',
-    custom_2:          '',
-  };
-
-  console.log('[PayHere Init]', { merchant_id: PH_MERCHANT_ID, sandbox: PH_SANDBOX, order_id: data.order_id, hash });
-
-  if (typeof window.payhere !== 'undefined') {
-    window.payhere.onCompleted = onSuccess;
-    window.payhere.onDismissed = onDismiss;
-    window.payhere.onError     = onError;
-    window.payhere.startPayment(payment);
-  } else {
-    // Fallback redirect if SDK not loaded
-    const base   = PH_SANDBOX
-      ? 'https://sandbox.payhere.lk/pay/checkout'
-      : 'https://www.payhere.lk/pay/checkout';
-    const params = new URLSearchParams(payment);
-    window.open(base + '?' + params.toString(), '_blank');
-    onSuccess(data.order_id);
-  }
-}
-
-// ─── CheckoutModal Component ─────────────────────────────────────────────────
 export const CheckoutModal = () => {
   const {
     isCheckoutOpen, setIsCheckoutOpen,
@@ -100,7 +14,7 @@ export const CheckoutModal = () => {
 
   if (!isCheckoutOpen) return null;
 
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(1); // 1: Delivery Details, 2: Payment & Review, 3: Confirmation
   const [formData, setFormData] = useState({
     fullName:      user?.name    || '',
     email:         user?.email   || '',
@@ -122,7 +36,10 @@ export const CheckoutModal = () => {
       addToast('Please fill in your name and delivery address.', 'error');
       return;
     }
-    if (!formData.email.trim()) { addToast('Email address is required.', 'error'); return; }
+    if (!formData.email.trim()) {
+      addToast('Email address is required.', 'error');
+      return;
+    }
     setStep(2);
   };
 
@@ -132,13 +49,21 @@ export const CheckoutModal = () => {
 
     const orderPayload = {
       orderItems: cart.map(item => ({
-        product: item.productId, name: item.name, price: item.price,
-        qty: item.qty, size: item.selectedSize, color: item.selectedColor, image: item.image
+        product: item.productId,
+        name: item.name,
+        price: item.price,
+        qty: item.qty,
+        size: item.selectedSize,
+        color: item.selectedColor,
+        image: item.image
       })),
       shippingAddress: {
-        fullName: formData.fullName, address: formData.address,
-        city: formData.city, postalCode: formData.postalCode,
-        country: formData.country, phone: formData.phone
+        fullName: formData.fullName,
+        address: formData.address,
+        city: formData.city,
+        postalCode: formData.postalCode,
+        country: formData.country,
+        phone: formData.phone
       },
       paymentMethod: formData.paymentMethod,
       itemsPrice:    cartSubtotal,
@@ -154,47 +79,117 @@ export const CheckoutModal = () => {
       setStep(3);
       clearCart();
       confetti({ particleCount: 120, spread: 75, origin: { y: 0.6 } });
-      addToast('Order confirmed! Thank you.', 'success');
+      addToast('Order confirmed! Thank you for your purchase.', 'success');
       if (user) sendOrderConfirmEmail(user, order).catch(() => {});
     };
 
-    // ── PayHere Payment ──────────────────────────────────────────────────────
+    // ── PayHere Payment Method ──────────────────────────────────────────────
     if (formData.paymentMethod === 'PayHere') {
       setSubmitting(false);
       setPhLoading(true);
-      const nameParts = formData.fullName.trim().split(' ');
 
-      launchPayHere(
-        {
-          order_id:   orderId,
-          items:      cart.map(i => i.name).join(', ').slice(0, 200),
-          amount:     cartTotal,
-          currency:   'LKR',
-          first_name: nameParts[0] || 'Customer',
-          last_name:  nameParts.slice(1).join(' ') || '',
-          email:      formData.email,
-          phone:      formData.phone || '0771234567',
-          address:    formData.address,
-          city:       formData.city || 'Colombo',
-          country:    formData.country || 'Sri Lanka',
-        },
-        async () => {
+      try {
+        // 1. Fetch server-side generated PayHere Hash from local backend
+        const hashRes = await fetchPayHereHash({
+          order_id: orderId,
+          amount: cartTotal,
+          currency: 'LKR'
+        });
+
+        if (!hashRes || !hashRes.success || !hashRes.hash) {
+          setPhLoading(false);
+          addToast(hashRes?.message || 'Could not generate PayHere hash from server', 'error');
+          return;
+        }
+
+        const nameParts = formData.fullName.trim().split(' ');
+        const firstName = nameParts[0] || 'Customer';
+        const lastName  = nameParts.slice(1).join(' ') || '';
+
+        // 2. Build PayHere 2.0 Payment Object
+        const payment = {
+          sandbox:          hashRes.sandbox,
+          merchant_id:      hashRes.merchant_id,
+          return_url:       window.location.origin + window.location.pathname,
+          cancel_url:       window.location.origin + window.location.pathname,
+          notify_url:       'http://localhost:5000/api/payhere/notify', // Local development IPN endpoint
+          order_id:         orderId,
+          items:            cart.map(i => i.name).join(', ').slice(0, 200) || 'DRESSFEAT Fashion Items',
+          amount:           hashRes.amount,
+          currency:         hashRes.currency || 'LKR',
+          hash:             hashRes.hash,
+          first_name:       firstName,
+          last_name:        lastName,
+          email:            formData.email,
+          phone:            formData.phone || '0771234567',
+          address:          formData.address,
+          city:             formData.city || 'Colombo',
+          country:          formData.country || 'Sri Lanka',
+          delivery_address: formData.address,
+          delivery_city:    formData.city || 'Colombo',
+          delivery_country: formData.country || 'Sri Lanka',
+          custom_1:         '',
+          custom_2:         '',
+        };
+
+        // Console log for development debugging
+        console.log('💳 [PayHere Payment Initiated]', {
+          order_id: payment.order_id,
+          amount: payment.amount,
+          currency: payment.currency,
+          merchant_id: payment.merchant_id,
+          sandbox_mode: payment.sandbox,
+          sdk_available: typeof window.payhere !== 'undefined'
+        });
+
+        // 3. Trigger PayHere SDK 2.0 Popup
+        if (typeof window.payhere !== 'undefined') {
+          window.payhere.onCompleted = async (orderIdCompleted) => {
+            console.log('✅ [PayHere Callback] Payment Completed:', orderIdCompleted);
+            setPhLoading(false);
+            const res = await apiCreateOrder({ ...orderPayload, orderId: orderIdCompleted || orderId }, token);
+            await finishOrder(res && res.success ? res.order : { _id: orderId, trackingNumber: orderId, ...orderPayload });
+          };
+
+          window.payhere.onDismissed = () => {
+            console.log('⚠️ [PayHere Callback] Payment Dismissed / Cancelled');
+            setPhLoading(false);
+            addToast('Payment cancelled by user.', 'info');
+          };
+
+          window.payhere.onError = (error) => {
+            console.error('❌ [PayHere Callback Error]', error);
+            setPhLoading(false);
+            addToast('PayHere Gateway Error: ' + (typeof error === 'string' ? error : 'Payment failed'), 'error');
+          };
+
+          window.payhere.startPayment(payment);
+        } else {
+          // Fallback redirect if PayHere SDK script is blocked or missing
+          console.warn('⚠️ [PayHere SDK] Script not found, falling back to direct redirect');
+          const baseUrl = hashRes.sandbox
+            ? 'https://sandbox.payhere.lk/pay/checkout'
+            : 'https://www.payhere.lk/pay/checkout';
+          const params = new URLSearchParams(payment);
+          window.open(baseUrl + '?' + params.toString(), '_blank');
           setPhLoading(false);
           const res = await apiCreateOrder({ ...orderPayload, orderId }, token);
           await finishOrder(res && res.success ? res.order : { _id: orderId, trackingNumber: orderId, ...orderPayload });
-        },
-        () => { setPhLoading(false); addToast('Payment cancelled.', 'info'); },
-        (err) => { setPhLoading(false); addToast('PayHere error: ' + err, 'error'); }
-      );
+        }
+      } catch (err) {
+        console.error('❌ [PayHere Checkout Error]', err);
+        setPhLoading(false);
+        addToast('PayHere integration error: ' + err.message, 'error');
+      }
       return;
     }
 
-    // ── Cash on Delivery ─────────────────────────────────────────────────────
+    // ── Cash on Delivery Payment Method ─────────────────────────────────────
     try {
       const res = await apiCreateOrder(orderPayload, token);
       await finishOrder(res && res.success ? res.order : { _id: orderId, trackingNumber: orderId, ...orderPayload });
     } catch {
-      addToast('Could not place order. Try again.', 'error');
+      addToast('Could not place order. Please try again.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -219,7 +214,7 @@ export const CheckoutModal = () => {
           </button>
         </div>
 
-        {/* Step tabs */}
+        {/* Step Tabs */}
         {step < 3 && (
           <div className="grid grid-cols-2 text-center text-xs font-bold uppercase tracking-wider border-b border-neutral-200">
             <button onClick={() => setStep(1)} className={`py-3 border-b-2 flex items-center justify-center gap-1.5 ${step === 1 ? 'border-black text-black bg-white' : 'border-transparent text-neutral-400 bg-neutral-50'}`}>
@@ -233,7 +228,7 @@ export const CheckoutModal = () => {
 
         <div className="p-6 sm:p-8">
 
-          {/* ── STEP 1: Delivery ──────────────────────────────────────────── */}
+          {/* ── STEP 1: Delivery Details ──────────────────────────────────── */}
           {step === 1 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -244,12 +239,13 @@ export const CheckoutModal = () => {
                   </span>
                 )}
               </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 {[
-                  { label: 'Full Name',     name: 'fullName', type: 'text',  ph: 'Nipun Dulanjana',   req: true },
-                  { label: 'Email Address', name: 'email',    type: 'email', ph: 'you@example.com',   req: true },
-                  { label: 'Phone Number',  name: 'phone',    type: 'text',  ph: '+94 77 123 4567',   req: true },
-                  { label: 'Country',       name: 'country',  type: 'text',  ph: 'Sri Lanka',         req: false },
+                  { label: 'Full Name',     name: 'fullName', type: 'text',  ph: 'Nipun Dulanjana', req: true },
+                  { label: 'Email Address', name: 'email',    type: 'email', ph: 'you@example.com', req: true },
+                  { label: 'Phone Number',  name: 'phone',    type: 'text',  ph: '+94 77 123 4567', req: true },
+                  { label: 'Country',       name: 'country',  type: 'text',  ph: 'Sri Lanka',       req: false },
                 ].map(f => (
                   <div key={f.name}>
                     <label className="block text-neutral-700 font-semibold mb-1">{f.label}</label>
@@ -275,6 +271,7 @@ export const CheckoutModal = () => {
                     className="w-full px-3 py-2 border border-neutral-300 focus:outline-none focus:border-black text-xs" />
                 </div>
               </div>
+
               <div className="pt-4 flex justify-end">
                 <button type="button" onClick={handleContinue}
                   className="px-8 py-3 bg-black text-white text-xs font-bold uppercase tracking-widest hover:bg-neutral-800">
@@ -291,7 +288,7 @@ export const CheckoutModal = () => {
                 <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-800 mb-3">Select Payment Method</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { id: 'PayHere',          label: 'PayHere',          sub: 'Visa / Master / Amex', icon: <CreditCard className="w-5 h-5" /> },
+                    { id: 'PayHere',          label: 'PayHere 2.0',      sub: 'Visa / Master / Amex', icon: <CreditCard className="w-5 h-5" /> },
                     { id: 'Cash on Delivery', label: 'Cash on Delivery', sub: 'Pay when received',    icon: <Banknote   className="w-5 h-5" /> },
                   ].map(m => (
                     <button key={m.id} type="button"
@@ -310,17 +307,16 @@ export const CheckoutModal = () => {
                   <div className="mt-3 p-3 bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-start gap-2">
                     <ShieldCheck className="w-4 h-4 flex-shrink-0 text-blue-600 mt-0.5" />
                     <div>
-                      <p className="font-bold">MD5 Hash Secured Payment (Merchant ID: {PH_MERCHANT_ID})</p>
+                      <p className="font-bold">Server-Side MD5 Secured Payment</p>
                       <p className="text-blue-600 mt-0.5">
-                        Your payment request is cryptographically signed with MD5 hash before sending to PayHere.
-                        Card details are handled on PayHere's PCI-DSS certified servers.
+                        Your payment request is signed by the Node backend server. Card details are processed on PayHere's PCI-DSS certified gateway.
                       </p>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Order summary */}
+              {/* Order Summary */}
               <div className="p-4 bg-neutral-100 border border-neutral-200 text-xs space-y-2">
                 <div className="flex justify-between font-bold text-neutral-900">
                   <span>Shipping To:</span>

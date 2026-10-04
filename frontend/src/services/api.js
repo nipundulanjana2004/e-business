@@ -3,7 +3,11 @@ const API_BASE = '/api';
 const safeFetch = async (url, options = {}) => {
   try {
     const res = await fetch(url, options);
-    if (!res.ok) return { success: false, status: res.status };
+    if (!res.ok) {
+      let serverMessage = '';
+      try { const body = await res.json(); serverMessage = body.message || ''; } catch {}
+      return { success: false, status: res.status, serverMessage };
+    }
     const contentType = res.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
       return await res.json();
@@ -85,6 +89,14 @@ export const createOrder = async (orderData, token) => {
   });
 };
 
+export const fetchPayHereHash = async (paymentData) => {
+  return safeFetch(`${API_BASE}/payhere/hash`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(paymentData)
+  });
+};
+
 export const fetchOrders = async (token) => {
   const headers = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -99,6 +111,13 @@ export const updateOrderStatus = async (id, status, token) => {
       'Authorization': `Bearer ${token}`
     },
     body: JSON.stringify({ status })
+  });
+};
+
+export const deleteOrder = async (id, token) => {
+  return safeFetch(`${API_BASE}/orders/${id}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${token}` }
   });
 };
 

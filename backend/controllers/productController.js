@@ -123,14 +123,20 @@ const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
     if (isConnected()) {
-      await Product.findByIdAndDelete(id);
+      let deleted = null;
+      if (mongoose.isValidObjectId(id)) deleted = await Product.findByIdAndDelete(id);
+      if (!deleted) deleted = await Product.findOneAndDelete({ id });
+      if (!deleted) return res.status(404).json({ success: false, message: 'Product not found' });
       return res.json({ success: true, message: 'Product deleted' });
     } else {
+      const before = memoryStore.products.length;
       memoryStore.products = memoryStore.products.filter(p => p.id !== id && p._id !== id);
+      if (memoryStore.products.length === before) return res.status(404).json({ success: false, message: 'Product not found' });
       return res.json({ success: true, message: 'Product deleted' });
     }
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Error deleting product' });
+    console.error('Error deleting product:', error);
+    res.status(500).json({ success: false, message: 'Error deleting product: ' + error.message });
   }
 };
 
