@@ -44,15 +44,17 @@ export const InfoModals = () => {
               <div className="grid grid-cols-3 gap-2 pb-4 border-b border-neutral-100 text-center text-[10px] text-neutral-600">
                 <div className="p-2 bg-neutral-50 border">
                   <Mail className="w-3.5 h-3.5 mx-auto mb-1 text-black" />
-                  <span>concierge@dressfeat.com</span>
+                  <span>joesdavid890@gmail.com</span>
                 </div>
                 <div className="p-2 bg-neutral-50 border">
                   <Phone className="w-3.5 h-3.5 mx-auto mb-1 text-black" />
-                  <span>+1 (800) 555-DF26</span>
+                  <span>+94 770561399</span>
                 </div>
                 <div className="p-2 bg-neutral-50 border">
                   <MapPin className="w-3.5 h-3.5 mx-auto mb-1 text-black" />
-                  <span>London • Paris • Milan</span>
+                  <span>13 post,
+                    Rajawaka,
+                    Balangoda</span>
                 </div>
               </div>
 
